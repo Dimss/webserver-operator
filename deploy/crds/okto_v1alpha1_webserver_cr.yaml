@@ -1,0 +1,8 @@
+apiVersion: okto.io/v1alpha1
+kind: WebServer
+metadata:
+  name: example-webserver
+spec:
+  size: 3
+  image: docker.io/dimssss/nginx-for-ocp:0.1
+  webSitesList: websites-list-cm
