@@ -163,6 +163,27 @@ func (r *ReconcileWebServer) Reconcile(request reconcile.Request) (reconcile.Res
 		return reconcile.Result{}, err
 	}
 
+	//Check if configmap for websites list already exists, if not create a new one
+	cm := &corev1.ConfigMap{}
+	err = r.client.Get(context.TODO(), types.NamespacedName{Name: webServer.Spec.WebSitesList, Namespace: webServer.Namespace}, cm)
+	if err != nil && errors.IsNotFound(err) {
+		websitesCm, err := r.configMapForWebServer(webServer)
+		if err != nil {
+			reqLogger.Error(err, "error getting websites ConfigMap")
+			return reconcile.Result{}, err
+		}
+		reqLogger.Info("Creating a new cm.", "ConfigMap.Namespace", websitesCm.Namespace, "ConfigMap.Name", websitesCm.Name)
+		err = r.client.Create(context.TODO(), websitesCm)
+		if err != nil {
+			reqLogger.Error(err, "Failed to create new ConfigMap.", "ConfigMap.Namespace", websitesCm.Namespace, "ConfigMap.Name", websitesCm.Name)
+			return reconcile.Result{}, err
+		}
+		return reconcile.Result{Requeue: true}, nil
+	} else if err != nil {
+		reqLogger.Error(err, "Failed to get configmap.")
+		return reconcile.Result{}, err
+	}
+
 	return reconcile.Result{}, nil
 }
 
@@ -261,4 +282,23 @@ func (r *ReconcileWebServer) routeForWebServer(webServer *oktov1alpha1.WebServer
 		return nil, err
 	}
 	return route, nil
+}
+
+func (r *ReconcileWebServer) configMapForWebServer(webServer *oktov1alpha1.WebServer) (*corev1.ConfigMap, error) {
+	labels := map[string]string{
+		"app": webServer.Name,
+	}
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      webServer.Spec.WebSitesList,
+			Namespace: webServer.Namespace,
+			Labels:    labels,
+		},
+		Data: map[string]string{},
+	}
+	if err := controllerutil.SetControllerReference(webServer, cm, r.scheme); err != nil {
+		log.Error(err, "Error set controller reference for configmap")
+		return nil, err
+	}
+	return cm, nil
 }
