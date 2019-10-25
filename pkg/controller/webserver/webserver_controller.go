@@ -165,7 +165,7 @@ func (r *ReconcileWebServer) Reconcile(request reconcile.Request) (reconcile.Res
 
 	//Check if configmap for websites list already exists, if not create a new one
 	cm := &corev1.ConfigMap{}
-	err = r.client.Get(context.TODO(), types.NamespacedName{Name: webServer.Spec.WebSitesList, Namespace: webServer.Namespace}, cm)
+	err = r.client.Get(context.TODO(), types.NamespacedName{Name: webServer.Spec.WebSitesRefCm, Namespace: webServer.Namespace}, cm)
 	if err != nil && errors.IsNotFound(err) {
 		websitesCm, err := r.configMapForWebServer(webServer)
 		if err != nil {
@@ -290,7 +290,7 @@ func (r *ReconcileWebServer) configMapForWebServer(webServer *oktov1alpha1.WebSe
 	}
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      webServer.Spec.WebSitesList,
+			Name:      webServer.Spec.WebSitesRefCm,
 			Namespace: webServer.Namespace,
 			Labels:    labels,
 		},

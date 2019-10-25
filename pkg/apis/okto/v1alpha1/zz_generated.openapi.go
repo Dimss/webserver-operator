@@ -78,14 +78,14 @@ func schema_pkg_apis_okto_v1alpha1_WebServerSpec(ref common.ReferenceCallback) c
 							Format: "",
 						},
 					},
-					"webSitesList": {
+					"webSitesRefCm": {
 						SchemaProps: spec.SchemaProps{
 							Type:   []string{"string"},
 							Format: "",
 						},
 					},
 				},
-				Required: []string{"size", "image", "webSitesList"},
+				Required: []string{"size", "image", "webSitesRefCm"},
 			},
 		},
 		Dependencies: []string{},

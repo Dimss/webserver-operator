@@ -7,9 +7,9 @@ import (
 // WebServerSpec defines the desired state of WebServer
 // +k8s:openapi-gen=true
 type WebServerSpec struct {
-	Size         int    `json:"size"`
-	Image        string `json:"image"`
-	WebSitesList string `json:"webSitesList"`
+	Size          int    `json:"size"`
+	Image         string `json:"image"`
+	WebSitesRefCm string `json:"webSitesRefCm"`
 }
 
 // +k8s:openapi-gen=true

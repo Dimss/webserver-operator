@@ -34,12 +34,12 @@ spec:
             size:
               format: int64
               type: integer
-            webSitesList:
+            webSitesRefCm:
               type: string
           required:
           - size
           - image
-          - webSitesList
+          - webSitesRefCm
           type: object
         status:
           type: object

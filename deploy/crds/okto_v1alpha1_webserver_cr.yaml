@@ -5,4 +5,4 @@ metadata:
 spec:
   size: 3
   image: docker.io/dimssss/nginx-for-ocp:0.1
-  webSitesList: websites-list-cm
+  webSitesRefCm: websites-list-cm
