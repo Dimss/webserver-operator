@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+  labels:
+    app: nginx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: docker.io/dimssss/nginx-for-ocp:0.1
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: test1-conf
+          mountPath: /opt/app-root/etc/nginx.d/
+        - name: test1-index
+          mountPath: /opt/app-root/src/test
+      volumes:
+      - name: test1-conf
+        configMap:
+          name: test1-conf
+      - name: test1-index
+        configMap:
+          name: test1-index
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+spec:
+  selector:
+    app: nginx
+  ports:
+  - name: http
+    protocol: TCP
+    port: 8080
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: test-route
+spec:
+  host: test.apps.a.okto.ocplab.io
+  port:
+    targetPort: http
+  to:
+    kind: Service
+    name: nginx
+    weight: 100

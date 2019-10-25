@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test1-conf
+data:
+  site1.conf: |
+    server {
+      listen 8080;
+      server_name test.apps.a.okto.ocplab.io;
+      error_log /dev/stdout info;
+      access_log /dev/stdout;
+      root /opt/app-root/src/test;
+      index index.html;
+    }
