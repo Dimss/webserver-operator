@@ -2,6 +2,8 @@ package webserver
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	routev1 "github.com/openshift/api/route/v1"
@@ -22,6 +24,11 @@ import (
 )
 
 var log = logf.Log.WithName("controller_webserver")
+
+type Sites struct {
+	IndexCm string `json:"indexCm"`
+	ConfCm  string `json:"confCm"`
+}
 
 // Add creates a new WebServer Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
@@ -63,6 +70,14 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	if err != nil {
 		return err
 	}
+	// Watch for changes to ConfigMap
+	err = c.Watch(&source.Kind{Type: &corev1.ConfigMap{}}, &handler.EnqueueRequestForOwner{
+		IsController: true,
+		OwnerType:    &oktov1alpha1.WebServer{},
+	})
+	if err != nil {
+		return err
+	}
 	// Watch for changes to Route
 	err = c.Watch(&source.Kind{Type: &routev1.Route{}}, &handler.EnqueueRequestForOwner{
 		IsController: true,
@@ -86,6 +101,7 @@ type ReconcileWebServer struct {
 }
 
 func (r *ReconcileWebServer) Reconcile(request reconcile.Request) (reconcile.Result, error) {
+	sites := &[]Sites{}
 	reqLogger := log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
 	reqLogger.Info("Reconciling WebServer")
 
@@ -182,6 +198,20 @@ func (r *ReconcileWebServer) Reconcile(request reconcile.Request) (reconcile.Res
 	} else if err != nil {
 		reqLogger.Error(err, "Failed to get configmap.")
 		return reconcile.Result{}, err
+	} else {
+		if err := r.syncSitesRefs(cm, sites); err != nil {
+			reqLogger.Error(err, "Failed to sync sites ref cm.")
+			return reconcile.Result{}, err
+		}
+		err := r.addSitesToWebServer(webServer, sites, deployment)
+		if err != nil {
+			reqLogger.Error(err, "Failed to add sites to deployment.")
+			return reconcile.Result{}, err
+		}
+		if err := r.client.Update(context.TODO(), deployment); err != nil {
+			reqLogger.Error(err, "Failed to update deployment.")
+			return reconcile.Result{}, err
+		}
 	}
 
 	return reconcile.Result{}, nil
@@ -294,11 +324,67 @@ func (r *ReconcileWebServer) configMapForWebServer(webServer *oktov1alpha1.WebSe
 			Namespace: webServer.Namespace,
 			Labels:    labels,
 		},
-		Data: map[string]string{},
+		Data: map[string]string{"sites": "[]"},
 	}
+	//TODO: for the workshop
 	if err := controllerutil.SetControllerReference(webServer, cm, r.scheme); err != nil {
 		log.Error(err, "Error set controller reference for configmap")
 		return nil, err
 	}
 	return cm, nil
+}
+
+func (r *ReconcileWebServer) syncSitesRefs(cm *corev1.ConfigMap, sites *[]Sites) error {
+	if _, ok := cm.Data["sites"]; !ok {
+		return fmt.Errorf("sites ref configmap is not valid, consider to delete the configmap")
+	}
+	if err := json.Unmarshal([]byte(cm.Data["sites"]), sites); err != nil {
+		return fmt.Errorf("unable to unmarshal sites struct, consider to delete the configmap")
+	}
+	return nil
+}
+
+func (r *ReconcileWebServer) addSitesToWebServer(webServer *oktov1alpha1.WebServer, sites *[]Sites, serverDeployment *appsv1.Deployment) error {
+	volumes := []corev1.Volume{}
+	volumeMounts := []corev1.VolumeMount{}
+	for _, site := range *sites {
+		// Add Config CM
+		volumes = append(volumes, corev1.Volume{
+			Name: site.ConfCm,
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: site.ConfCm,
+					},
+				},
+			},
+		})
+		// Add Config Index CM
+		volumes = append(volumes, corev1.Volume{
+			Name: site.IndexCm,
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: site.IndexCm,
+					},
+				},
+			},
+		})
+	}
+	for _, site := range *sites {
+		// Add Config CM
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      site.ConfCm,
+			MountPath: "/opt/app-root/etc/nginx.d/",
+		})
+		// Add Index CM
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      site.IndexCm,
+			MountPath: "/opt/app-root/src/" + site.IndexCm,
+		})
+	}
+	serverDeployment.Spec.Template.Spec.Volumes = volumes
+	webServerContainer := &serverDeployment.Spec.Template.Spec.Containers[0]
+	webServerContainer.VolumeMounts = volumeMounts
+	return nil
 }

@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: websites-list-cm
+  namespace: darp
+  labels:
+    app: example-webserver
+data:
+  sites: '[{"indexCm":"test1-index","confCm":"test1-conf"}]'
+

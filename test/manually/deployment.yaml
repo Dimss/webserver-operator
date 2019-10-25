@@ -23,6 +23,8 @@ spec:
         - name: test1-conf
           mountPath: /opt/app-root/etc/nginx.d/
         - name: test1-index
+          mountPath: /opt/app-root/etc/nginx.d/
+        - name: test1-index
           mountPath: /opt/app-root/src/test
       volumes:
       - name: test1-conf
