@@ -6,9 +6,9 @@ data:
   site1.conf: |
     server {
       listen 8080;
-      server_name test.apps.a.okto.ocplab.io;
+      server_name test1.apps.a.okto.ocplab.io;
       error_log /dev/stdout info;
       access_log /dev/stdout;
-      root /opt/app-root/src/test;
+      root /opt/app-root/src/test1-index;
       index index.html;
     }

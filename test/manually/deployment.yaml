@@ -16,16 +16,18 @@ spec:
     spec:
       containers:
       - name: nginx
-        image: docker.io/dimssss/nginx-for-ocp:0.1
+        image: docker.io/dimssss/nginx-for-ocp:0.2
         ports:
         - containerPort: 8080
         volumeMounts:
         - name: test1-conf
-          mountPath: /opt/app-root/etc/nginx.d/
+          mountPath: /opt/app-root/etc/nginx.d/test1
         - name: test1-index
-          mountPath: /opt/app-root/etc/nginx.d/
-        - name: test1-index
-          mountPath: /opt/app-root/src/test
+          mountPath: /opt/app-root/src/test1
+        - name: test2-conf
+          mountPath: /opt/app-root/etc/nginx.d/test2
+        - name: test2-index
+          mountPath: /opt/app-root/src/test2
       volumes:
       - name: test1-conf
         configMap:
@@ -33,6 +35,12 @@ spec:
       - name: test1-index
         configMap:
           name: test1-index
+      - name: test2-conf
+        configMap:
+          name: test2-conf
+      - name: test2-index
+        configMap:
+          name: test2-index
 ---
 apiVersion: v1
 kind: Service
@@ -49,9 +57,26 @@ spec:
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
-  name: test-route
+  name: test1-route
 spec:
-  host: test.apps.a.okto.ocplab.io
+  host: test1.apps.a.okto.ocplab.io
+  tls:
+    termination: edge
+  port:
+    targetPort: http
+  to:
+    kind: Service
+    name: nginx
+    weight: 100
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: test2-route
+spec:
+  host: test2.apps.a.okto.ocplab.io
+  tls:
+    termination: edge
   port:
     targetPort: http
   to:

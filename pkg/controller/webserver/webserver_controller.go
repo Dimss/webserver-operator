@@ -203,14 +203,17 @@ func (r *ReconcileWebServer) Reconcile(request reconcile.Request) (reconcile.Res
 			reqLogger.Error(err, "Failed to sync sites ref cm.")
 			return reconcile.Result{}, err
 		}
-		err := r.addSitesToWebServer(webServer, sites, deployment)
+		updateDeployment, err := r.addSitesToWebServer(webServer, sites, deployment)
 		if err != nil {
 			reqLogger.Error(err, "Failed to add sites to deployment.")
 			return reconcile.Result{}, err
 		}
-		if err := r.client.Update(context.TODO(), deployment); err != nil {
-			reqLogger.Error(err, "Failed to update deployment.")
-			return reconcile.Result{}, err
+		// If update deployment true, run Deployment Update
+		if updateDeployment {
+			if err := r.client.Update(context.TODO(), deployment); err != nil {
+				reqLogger.Error(err, "Failed to update deployment.")
+				return reconcile.Result{}, err
+			}
 		}
 	}
 
@@ -301,6 +304,9 @@ func (r *ReconcileWebServer) routeForWebServer(webServer *oktov1alpha1.WebServer
 			Labels:    labels,
 		},
 		Spec: routev1.RouteSpec{
+			TLS: &routev1.TLSConfig{
+				Termination: routev1.TLSTerminationEdge,
+			},
 			To: routev1.RouteTargetReference{
 				Kind: "Service",
 				Name: webServer.Name,
@@ -344,47 +350,88 @@ func (r *ReconcileWebServer) syncSitesRefs(cm *corev1.ConfigMap, sites *[]Sites)
 	return nil
 }
 
-func (r *ReconcileWebServer) addSitesToWebServer(webServer *oktov1alpha1.WebServer, sites *[]Sites, serverDeployment *appsv1.Deployment) error {
+func (r *ReconcileWebServer) addSitesToWebServer(
+	webServer *oktov1alpha1.WebServer,
+	sites *[]Sites,
+	serverDeployment *appsv1.Deployment) (updateDeployment bool, err error) {
+
+	updateDeployment = false
 	volumes := []corev1.Volume{}
 	volumeMounts := []corev1.VolumeMount{}
 	for _, site := range *sites {
-		// Add Config CM
-		volumes = append(volumes, corev1.Volume{
-			Name: site.ConfCm,
-			VolumeSource: corev1.VolumeSource{
-				ConfigMap: &corev1.ConfigMapVolumeSource{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: site.ConfCm,
+
+		if !volumeExistsInDeployment(serverDeployment, site.ConfCm) {
+			updateDeployment = true
+			// Add Config CM
+			volumes = append(volumes, corev1.Volume{
+				Name: site.ConfCm,
+				VolumeSource: corev1.VolumeSource{
+					ConfigMap: &corev1.ConfigMapVolumeSource{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: site.ConfCm,
+						},
 					},
 				},
-			},
-		})
-		// Add Config Index CM
-		volumes = append(volumes, corev1.Volume{
-			Name: site.IndexCm,
-			VolumeSource: corev1.VolumeSource{
-				ConfigMap: &corev1.ConfigMapVolumeSource{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: site.IndexCm,
+			})
+		}
+
+		if !volumeExistsInDeployment(serverDeployment, site.IndexCm) {
+			updateDeployment = true
+			// Add Config Index CM
+			volumes = append(volumes, corev1.Volume{
+				Name: site.IndexCm,
+				VolumeSource: corev1.VolumeSource{
+					ConfigMap: &corev1.ConfigMapVolumeSource{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: site.IndexCm,
+						},
 					},
 				},
-			},
-		})
+			})
+		}
+
 	}
 	for _, site := range *sites {
-		// Add Config CM
-		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      site.ConfCm,
-			MountPath: "/opt/app-root/etc/nginx.d/",
-		})
-		// Add Index CM
-		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      site.IndexCm,
-			MountPath: "/opt/app-root/src/" + site.IndexCm,
-		})
+		if !volumeMountExistsInDeployment(serverDeployment, site.ConfCm) {
+			updateDeployment = true
+			// Add Config CM
+			volumeMounts = append(volumeMounts, corev1.VolumeMount{
+				Name:      site.ConfCm,
+				MountPath: fmt.Sprintf("/opt/app-root/etc/nginx.d/%s", site.ConfCm),
+			})
+		}
+		if !volumeMountExistsInDeployment(serverDeployment, site.IndexCm) {
+			updateDeployment = true
+			// Add Index CM
+			volumeMounts = append(volumeMounts, corev1.VolumeMount{
+				Name:      site.IndexCm,
+				MountPath: fmt.Sprintf("/opt/app-root/src/%s", site.IndexCm),
+			})
+		}
+
 	}
-	serverDeployment.Spec.Template.Spec.Volumes = volumes
+	serverDeployment.Spec.Template.Spec.Volumes = append(serverDeployment.Spec.Template.Spec.Volumes, volumes...)
 	webServerContainer := &serverDeployment.Spec.Template.Spec.Containers[0]
-	webServerContainer.VolumeMounts = volumeMounts
-	return nil
+	webServerContainer.VolumeMounts = append(webServerContainer.VolumeMounts, volumeMounts...)
+	return updateDeployment, nil
+}
+
+func volumeExistsInDeployment(serverDeployment *appsv1.Deployment, volumeName string) bool {
+	for _, volume := range serverDeployment.Spec.Template.Spec.Volumes {
+		if volume.Name == volumeName {
+			return true
+		}
+	}
+	return false
+}
+
+func volumeMountExistsInDeployment(serverDeployment *appsv1.Deployment, volumeMountName string) bool {
+	for _, container := range serverDeployment.Spec.Template.Spec.Containers {
+		for _, volumeMount := range container.VolumeMounts {
+			if volumeMount.Name == volumeMountName {
+				return true
+			}
+		}
+	}
+	return false
 }

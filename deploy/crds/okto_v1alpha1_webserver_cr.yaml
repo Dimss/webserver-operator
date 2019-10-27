@@ -4,5 +4,5 @@ metadata:
   name: example-webserver
 spec:
   size: 3
-  image: docker.io/dimssss/nginx-for-ocp:0.1
+  image: docker.io/dimssss/nginx-for-ocp:0.2
   webSitesRefCm: websites-list-cm
