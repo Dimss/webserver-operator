@@ -203,7 +203,7 @@ func (r *ReconcileWebServer) Reconcile(request reconcile.Request) (reconcile.Res
 			reqLogger.Error(err, "Failed to sync sites ref cm.")
 			return reconcile.Result{}, err
 		}
-		updateDeployment, err := r.addSitesToWebServer(webServer, sites, deployment)
+		updateDeployment, err := r.syncSitesToWebServer(webServer, sites, deployment)
 		if err != nil {
 			reqLogger.Error(err, "Failed to add sites to deployment.")
 			return reconcile.Result{}, err
@@ -350,7 +350,7 @@ func (r *ReconcileWebServer) syncSitesRefs(cm *corev1.ConfigMap, sites *[]Sites)
 	return nil
 }
 
-func (r *ReconcileWebServer) addSitesToWebServer(
+func (r *ReconcileWebServer) syncSitesToWebServer(
 	webServer *oktov1alpha1.WebServer,
 	sites *[]Sites,
 	serverDeployment *appsv1.Deployment) (updateDeployment bool, err error) {
@@ -358,36 +358,42 @@ func (r *ReconcileWebServer) addSitesToWebServer(
 	updateDeployment = false
 	volumes := []corev1.Volume{}
 	volumeMounts := []corev1.VolumeMount{}
+	// Sync Deployment Volumes and Sites CM
+	// If site exists in Deployment but the same site is missing from CM
+	// remove that mount from Deployment
+	for _, volume := range serverDeployment.Spec.Template.Spec.Volumes {
+		siteName := volumeExistsInSites(sites, volume.Name)
+		if siteName == nil {
+			log.Info("No volumes found for", "siteName", siteName)
+			updateDeployment = true
+		} else {
+			volumes = append(volumes, getVolume(*siteName))
+		}
+	}
+
+	for _, container := range serverDeployment.Spec.Template.Spec.Containers {
+		for _, volumeMount := range container.VolumeMounts {
+			siteName, mountPath := volumeMountExistsInSites(sites, volumeMount.Name)
+			if siteName == nil {
+				updateDeployment = true
+			} else {
+				volumeMounts = append(volumeMounts, getVolumeMount(*siteName, *mountPath))
+			}
+		}
+	}
+
 	for _, site := range *sites {
 
 		if !volumeExistsInDeployment(serverDeployment, site.ConfCm) {
 			updateDeployment = true
 			// Add Config CM
-			volumes = append(volumes, corev1.Volume{
-				Name: site.ConfCm,
-				VolumeSource: corev1.VolumeSource{
-					ConfigMap: &corev1.ConfigMapVolumeSource{
-						LocalObjectReference: corev1.LocalObjectReference{
-							Name: site.ConfCm,
-						},
-					},
-				},
-			})
+			volumes = append(volumes, getVolume(site.ConfCm))
 		}
 
 		if !volumeExistsInDeployment(serverDeployment, site.IndexCm) {
 			updateDeployment = true
 			// Add Config Index CM
-			volumes = append(volumes, corev1.Volume{
-				Name: site.IndexCm,
-				VolumeSource: corev1.VolumeSource{
-					ConfigMap: &corev1.ConfigMapVolumeSource{
-						LocalObjectReference: corev1.LocalObjectReference{
-							Name: site.IndexCm,
-						},
-					},
-				},
-			})
+			volumes = append(volumes, getVolume(site.IndexCm))
 		}
 
 	}
@@ -395,24 +401,20 @@ func (r *ReconcileWebServer) addSitesToWebServer(
 		if !volumeMountExistsInDeployment(serverDeployment, site.ConfCm) {
 			updateDeployment = true
 			// Add Config CM
-			volumeMounts = append(volumeMounts, corev1.VolumeMount{
-				Name:      site.ConfCm,
-				MountPath: fmt.Sprintf("/opt/app-root/etc/nginx.d/%s", site.ConfCm),
-			})
+			volumeMounts = append(volumeMounts, getVolumeMount(site.ConfCm, "/opt/app-root/etc/nginx.d/%s"))
 		}
 		if !volumeMountExistsInDeployment(serverDeployment, site.IndexCm) {
 			updateDeployment = true
 			// Add Index CM
-			volumeMounts = append(volumeMounts, corev1.VolumeMount{
-				Name:      site.IndexCm,
-				MountPath: fmt.Sprintf("/opt/app-root/src/%s", site.IndexCm),
-			})
+			volumeMounts = append(volumeMounts, getVolumeMount(site.IndexCm, "/opt/app-root/src/%s"))
+
 		}
 
 	}
-	serverDeployment.Spec.Template.Spec.Volumes = append(serverDeployment.Spec.Template.Spec.Volumes, volumes...)
+
+	serverDeployment.Spec.Template.Spec.Volumes = volumes
 	webServerContainer := &serverDeployment.Spec.Template.Spec.Containers[0]
-	webServerContainer.VolumeMounts = append(webServerContainer.VolumeMounts, volumeMounts...)
+	webServerContainer.VolumeMounts = volumeMounts
 	return updateDeployment, nil
 }
 
@@ -434,4 +436,51 @@ func volumeMountExistsInDeployment(serverDeployment *appsv1.Deployment, volumeMo
 		}
 	}
 	return false
+}
+
+func volumeExistsInSites(sites *[]Sites, volumeName string) *string {
+	for _, site := range *sites {
+		if site.ConfCm == volumeName {
+			return &site.ConfCm
+		}
+		if site.IndexCm == volumeName {
+			return &site.IndexCm
+		}
+	}
+	return nil
+}
+
+func volumeMountExistsInSites(sites *[]Sites, volumeName string) (*string, *string) {
+	confPath := "/opt/app-root/etc/nginx.d/%s"
+	indexPath := "/opt/app-root/src/%s"
+	for _, site := range *sites {
+		if site.ConfCm == volumeName {
+			return &site.ConfCm, &confPath
+		}
+
+		if site.IndexCm == volumeName {
+			return &site.IndexCm, &indexPath
+		}
+	}
+	return nil, nil
+}
+
+func getVolume(name string) corev1.Volume {
+	return corev1.Volume{
+		Name: name,
+		VolumeSource: corev1.VolumeSource{
+			ConfigMap: &corev1.ConfigMapVolumeSource{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: name,
+				},
+			},
+		},
+	}
+}
+
+func getVolumeMount(name string, mount string) corev1.VolumeMount {
+	return corev1.VolumeMount{
+		Name:      name,
+		MountPath: fmt.Sprintf("/%s/%s", mount, name),
+	}
 }
