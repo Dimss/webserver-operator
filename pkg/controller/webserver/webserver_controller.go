@@ -401,12 +401,12 @@ func (r *ReconcileWebServer) syncSitesToWebServer(
 		if !volumeMountExistsInDeployment(serverDeployment, site.ConfCm) {
 			updateDeployment = true
 			// Add Config CM
-			volumeMounts = append(volumeMounts, getVolumeMount(site.ConfCm, "/opt/app-root/etc/nginx.d/%s"))
+			volumeMounts = append(volumeMounts, getVolumeMount(site.ConfCm, fmt.Sprintf("/opt/app-root/etc/nginx.d/%s", site.IndexCm)))
 		}
 		if !volumeMountExistsInDeployment(serverDeployment, site.IndexCm) {
 			updateDeployment = true
 			// Add Index CM
-			volumeMounts = append(volumeMounts, getVolumeMount(site.IndexCm, "/opt/app-root/src/%s"))
+			volumeMounts = append(volumeMounts, getVolumeMount(site.IndexCm, fmt.Sprintf("/opt/app-root/src/%s", site.IndexCm)))
 
 		}
 
@@ -455,11 +455,13 @@ func volumeMountExistsInSites(sites *[]Sites, volumeName string) (*string, *stri
 	indexPath := "/opt/app-root/src/%s"
 	for _, site := range *sites {
 		if site.ConfCm == volumeName {
-			return &site.ConfCm, &confPath
+			mountPath := fmt.Sprintf(confPath, site.ConfCm)
+			return &site.ConfCm, &mountPath
 		}
 
 		if site.IndexCm == volumeName {
-			return &site.IndexCm, &indexPath
+			mountPath := fmt.Sprintf(indexPath, site.IndexCm)
+			return &site.IndexCm, &mountPath
 		}
 	}
 	return nil, nil
@@ -481,6 +483,6 @@ func getVolume(name string) corev1.Volume {
 func getVolumeMount(name string, mount string) corev1.VolumeMount {
 	return corev1.VolumeMount{
 		Name:      name,
-		MountPath: fmt.Sprintf("/%s/%s", mount, name),
+		MountPath: mount,
 	}
 }
